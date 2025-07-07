@@ -38,4 +38,6 @@ def api_get_history(goal_id):
     return jsonify(goal_history.to_dict(orient="records"))
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
