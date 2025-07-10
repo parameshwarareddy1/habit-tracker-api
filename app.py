@@ -91,51 +91,52 @@ def add_goal(name, freq):
 
 def update_progress(goal_id, goal_name, pct):
     today = datetime.now().date()
-    if not st.session_state.history[
-        (st.session_state.history["GoalID"] == goal_id) & 
-        (st.session_state.history["Date"] == today)
-    ].empty:
-        # Update existing entry for today
-        current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
-        if pct == 100:
-            new_progress = current_progress * 1.01
-            change = 0.01
-        elif pct == 50:
-            new_progress = current_progress * 1.005
-            change = 0.005
-        else:
-            new_progress = current_progress / 1.01
-            change = -0.01
-
-        st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
-        st.session_state.history.loc[
+    current_week = get_week_number(today)
+    
+    # Get the goal's frequency
+    frequency = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Frequency"].values[0]
+    
+    # Check if an update is allowed
+    if frequency == "Weekly":
+        # Check if there's already an update in the current week
+        history_weeks = st.session_state.history[
             (st.session_state.history["GoalID"] == goal_id) & 
-            (st.session_state.history["Date"] == today),
-            ["Progress", "Percentage", "Change"]
-        ] = [new_progress, pct, change]
+            (st.session_state.history["Date"].apply(get_week_number) == current_week)
+        ]
+        if not history_weeks.empty:
+            st.error(f"Progress for this weekly goal has already been updated for week {current_week}.")
+            return
     else:
-        # Create new entry for today
-        current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
-        if pct == 100:
-            new_progress = current_progress * 1.01
-            change = 0.01
-        elif pct == 50:
-            new_progress = current_progress * 1.005
-            change = 0.005
-        else:
-            new_progress = current_progress / 1.01
-            change = -0.01
+        # For Daily and Monthly goals, check if there's an update today
+        if not st.session_state.history[
+            (st.session_state.history["GoalID"] == goal_id) & 
+            (st.session_state.history["Date"] == today)
+        ].empty:
+            st.error("Progress for this goal has already been updated today.")
+            return
 
-        st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
-        row = {
-            "GoalID": goal_id,
-            "GoalName": goal_name,
-            "Date": today,
-            "Progress": new_progress,
-            "Percentage": pct,
-            "Change": change
-        }
-        st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
+    # Update progress
+    current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
+    if pct == 100:
+        new_progress = current_progress * 1.01
+        change = 0.01
+    elif pct == 50:
+        new_progress = current_progress * 1.005
+        change = 0.005
+    else:
+        new_progress = current_progress / 1.01
+        change = -0.01
+
+    st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
+    row = {
+        "GoalID": goal_id,
+        "GoalName": goal_name,
+        "Date": today,
+        "Progress": new_progress,
+        "Percentage": pct,
+        "Change": change
+    }
+    st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
     save_data()
 
 def calculate_potential_progress(start_date, current_progress):
@@ -155,7 +156,7 @@ def show_progress_info(gid, gname):
     potential_progress = calculate_potential_progress(start_date, progress)
     today = datetime.now().date()
 
-    # Display progress info in vertically stacked boxes
+    # Display progress info in vertically stacked boxes with 3 decimal places
     st.markdown(f"""
         <div style='
             display: flex;
@@ -174,7 +175,7 @@ def show_progress_info(gid, gname):
                 text-align: center;
                 transition: transform 0.2s ease-in-out;
             ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                🎯 Potential Progress: {potential_progress:.2f}
+                🎯 Potential Progress: {potential_progress:.3f}
             </div>
             <div style='
                 background: linear-gradient(45deg, #4facfe, #00f2fe);
@@ -187,7 +188,7 @@ def show_progress_info(gid, gname):
                 text-align: center;
                 transition: transform 0.2s ease-in-out;
             ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                🔥 Actual Progress: {progress:.2f}
+                🔥 Actual Progress: {progress:.3f}
             </div>
             <div style='
                 background: linear-gradient(45deg, #2ecc71, #27ae60);
