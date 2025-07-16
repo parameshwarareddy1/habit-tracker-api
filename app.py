@@ -138,6 +138,16 @@ def update_progress(goal_id, goal_name, pct):
     }
     st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
     save_data()
+    st.success("Progress updated!")
+    st.rerun()  # Refresh the page to reflect the update
+
+def delete_goal(goal_id, goal_name):
+    # Remove goal from data and history
+    st.session_state.data = st.session_state.data[st.session_state.data["GoalID"] != goal_id]
+    st.session_state.history = st.session_state.history[st.session_state.history["GoalID"] != goal_id]
+    save_data()
+    st.success(f"Goal '{goal_name}' deleted successfully!")
+    st.rerun()  # Refresh the page to reflect deletion
 
 def calculate_potential_progress(start_date, current_progress):
     today = datetime.now().date()
@@ -239,7 +249,7 @@ def show_last_7_days(gid):
         else:
             history = df[df["Date"] == date]
             if not history.empty:
-                pct = history["Percentage"].iloc[0]
+                pct = history["Percentage"].iloc[-1]  # Use the latest entry for the date
                 emojis.append("🟢" if pct == 100 else "🟡" if pct == 50 else "🔴")
             else:
                 emojis.append("🔴")
@@ -261,10 +271,14 @@ if not st.session_state.data.empty:
         last_7_days = show_last_7_days(row["GoalID"])
         with st.expander(f"{row['GoalName']} | Last 7 Days: {last_7_days}"):
             show_progress_info(row["GoalID"], row["GoalName"])
-            pct = st.selectbox("Progress Today", [0, 50, 100], key=f"pct_{row['GoalID']}")
-            if st.button("Update", key=f"btn_{row['GoalID']}"):
-                update_progress(row["GoalID"], row["GoalName"], pct)
-                st.success("Progress updated!")
+            col1, col2 = st.columns([1, 1])  # Create two columns for Update and Delete buttons
+            with col1:
+                pct = st.selectbox("Progress Today", [0, 50, 100], key=f"pct_{row['GoalID']}")
+                if st.button("Update", key=f"btn_{row['GoalID']}"):
+                    update_progress(row["GoalID"], row["GoalName"], pct)
+            with col2:
+                if st.button("Delete Goal", key=f"del_{row['GoalID']}"):
+                    delete_goal(row["GoalID"], row["GoalName"])
 
 # Add goal form
 st.markdown("---")
