@@ -2,9 +2,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
 import os
-from openpyxl import load_workbook
-import calendar
-from dateutil.relativedelta import relativedelta
 import subprocess
 import logging
 
@@ -15,7 +12,6 @@ logger = logging.getLogger(__name__)
 # File paths and settings
 DATA_FILE = "tracker_data.xlsx"
 HISTORY_FILE = "progress_history.xlsx"
-PASSWORD = "param123"
 REPO_DIR = "."
 BRANCH = "main"
 GITHUB_REPO = "parameshwarareddy1/habit-tracker-api"
@@ -53,19 +49,10 @@ def load_history():
 
 def save_data():
     try:
-        # Save to Excel files
+        # Save to Excel files without password protection
         st.session_state.data.to_excel(DATA_FILE, index=False, engine='openpyxl')
         st.session_state.history.to_excel(HISTORY_FILE, index=False, engine='openpyxl')
         logger.info(f"Saved {DATA_FILE} and {HISTORY_FILE}")
-
-        # Apply password protection
-        data_wb = load_workbook(DATA_FILE)
-        history_wb = load_workbook(HISTORY_FILE)
-        data_wb.security.set_workbook_password(PASSWORD)
-        history_wb.security.set_workbook_password(PASSWORD)
-        data_wb.save(DATA_FILE)
-        history_wb.save(HISTORY_FILE)
-        logger.info(f"Applied password protection to {DATA_FILE} and {HISTORY_FILE}")
 
         # Commit and push to GitHub
         commit_and_push_to_github()
@@ -124,6 +111,7 @@ def add_goal(name, freq):
     st.session_state.data = pd.concat([st.session_state.data, pd.DataFrame([new_row])], ignore_index=True)
     st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([hist_row])], ignore_index=True)
     save_data()
+    logger.info(f"Added goal: {name}, Frequency: {freq}")
     st.success(f"Added Goal: {name}")
     st.rerun()
 
@@ -167,6 +155,7 @@ def update_progress(goal_id, goal_name, pct):
     }
     st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
     save_data()
+    logger.info(f"Updated progress for goal {goal_name}: Percentage={pct}, New Progress={new_progress}")
     st.success("Progress updated!")
     st.rerun()
 
@@ -174,6 +163,7 @@ def delete_goal(goal_id, goal_name):
     st.session_state.data = st.session_state.data[st.session_state.data["GoalID"] != goal_id]
     st.session_state.history = st.session_state.history[st.session_state.history["GoalID"] != goal_id]
     save_data()
+    logger.info(f"Deleted goal: {goal_name}")
     st.success(f"Goal '{goal_name}' deleted successfully!")
     st.rerun()
 
@@ -295,15 +285,6 @@ if "data" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = load_history()
 
-# Add new goal
-st.subheader("Add New Goal")
-with st.form("add_goal_form", clear_on_submit=True):
-    name = st.text_input("Goal Name")
-    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
-    submitted = st.form_submit_button("Add Goal")
-    if submitted and name:
-        add_goal(name, freq)
-
 # Show goals
 if not st.session_state.data.empty:
     st.subheader("📌 Your Goals")
@@ -322,3 +303,12 @@ if not st.session_state.data.empty:
             with col3:
                 if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
                     st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
+
+# Add new goal
+st.subheader("Add New Goal")
+with st.form("add_goal_form", clear_on_submit=True):
+    name = st.text_input("Goal Name")
+    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
+    submitted = st.form_submit_button("Add Goal")
+    if submitted and name:
+        add_goal(name, freq)
