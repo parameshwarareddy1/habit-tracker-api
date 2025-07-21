@@ -275,7 +275,7 @@ def show_calendar(gid, year=None, month=None):
                 <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
                 <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
                 {''.join([
-                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{day['day'] + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
+                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day['day']) + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
                     for day in days
                 ])}
             </div>
