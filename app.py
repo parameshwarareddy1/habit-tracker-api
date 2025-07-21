@@ -252,4 +252,151 @@ def show_progress_info(gid, gname):
                 🔥 Actual Progress: {progress:.3f}
             </div>
             <div style='
-                background: linear-gradient(45deg, #2
+                background: linear-gradient(45deg, #2ecc71, #27ae60);
+                color: white;
+                font-size: 18px;
+                padding: 15px 20px;
+                border-radius: 12px;
+                font-weight: bold;
+                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+                text-align: center;
+                transition: transform 0.2s ease-in-out;
+            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+                🚀 Start Date: {start_date.strftime('%Y-%m-%d')}
+            </div>
+            <div style='
+                background: linear-gradient(45deg, #e84393, #a29bfe);
+                color: white;
+                font-size: 18px;
+                padding: 15px 20px;
+                border-radius: 12px;
+                font-weight: bold;
+                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+                text-align: center;
+                transition: transform 0.2s ease-in-out;
+            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+                📅 Today: {today.strftime('%Y-%m-%d')}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+def show_last_7_days(gid):
+    today = datetime.now().date()
+    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
+    days_since_start = (today - start_date).days
+    display_start = max(today - timedelta(days=6), start_date)
+    date_range = [display_start + timedelta(days=x) for x in range(min(7, days_since_start + 1))]
+
+    df = st.session_state.history[
+        (st.session_state.history["GoalID"] == gid) & 
+        (st.session_state.history["Date"] >= display_start) & 
+        (st.session_state.history["Date"] <= today)
+    ]
+
+    emojis = []
+    for date in date_range:
+        if date == start_date:
+            emojis.append("🚀")
+        else:
+            history = df[df["Date"] == date]
+            if not history.empty:
+                pct = history["Percentage"].iloc[-1]
+                emojis.append("🟢" if pct == 100 else "🟡" if pct == 50 else "🔴")
+            else:
+                emojis.append("⬜")
+    return " ".join(emojis)
+
+def show_calendar(gid, year=None, month=None):
+    today = datetime.now().date()
+    year = year or today.year
+    month = month or today.month
+    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
+    df = st.session_state.history[st.session_state.history["GoalID"] == gid]
+    hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
+
+    first_day = datetime(year, month, 1).date()
+    last_day = (first_day + relativedelta(months=1) - timedelta(days=1)).date()
+    today_str = today.strftime("%Y-%m-%d")
+    start_date_str = start_date.strftime("%Y-%m-%d")
+
+    days = []
+    for i in range(first_day.weekday()):
+        days.append({"type": "pad"})
+    for d in range(1, last_day.day + 1):
+        ds = datetime(year, month, d).date()
+        ds_str = ds.strftime("%Y-%m-%d")
+        if ds_str > today_str:
+            status = "future"
+        elif ds_str == start_date_str:
+            status = "start"
+        elif ds_str in hist_by_date:
+            pct = hist_by_date[ds_str]["Percentage"]
+            status = "full" if pct == 100 else "half" if pct == 50 else "zero"
+        else:
+            status = "miss"
+        emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
+        days.append({"type": "day", "day": d, "date": ds_str, "status": status, "emoji": emoji})
+
+    # Generate calendar HTML
+    calendar_html = f"""
+        <h4>Calendar for {year}-{month:02d}</h4>
+        <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
+            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
+            {''.join([
+                f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{day['day'] + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
+                for day in days
+            ])}
+        </div>
+    """
+    return calendar_html
+
+# -------- Streamlit UI --------
+st.set_page_config(page_title="Goal Tracker", layout="wide")
+st.title("🎯 Goal Tracker")
+
+if "data" not in st.session_state:
+    st.session_state.data = load_data()
+if "history" not in st.session_state:
+    st.session_state.history = load_history()
+
+# Show goals
+if not st.session_state.data.empty:
+    st.subheader("📌 Your Goals")
+    for _, row in st.session_state.data.iterrows():
+        last_7_days = show_last_7_days(row["GoalID"])
+        with st.expander(f"{row['GoalName']} | Last 7 Days: {last_7_days}"):
+            show_progress_info(row["GoalID"], row["GoalName"])
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                pct = st.selectbox("Progress Today", [0, 50, 100], key=f"pct_{row['GoalID']}")
+                if st.button("Update", key=f"btn_{row['GoalID']}"):
+                    update_progress(row["GoalID"], row["GoalName"], pct)
+            with col2:
+                if st.button("Delete Goal", key=f"del_{row['GoalID']}"):
+                    delete_goal(row["GoalID"], row["GoalName"])
+            with col3:
+                if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
+                    if f"show_calendar_{row['GoalID']}" not in st.session_state:
+                        st.session_state[f"show_calendar_{row['GoalID']}"] = False
+                    st.session_state[f"show_calendar_{row['GoalID']}"] = not st.session_state[f"show_calendar_{row['GoalID']}"]
+            if st.session_state.get(f"show_calendar_{row['GoalID']}", False):
+                st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
+
+# Add goal form
+st.markdown("---")
+st.subheader("➕ Add New Goal")
+with st.form("new_goal"):
+    name = st.text_input("Goal Name")
+    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
+    submit = st.form_submit_button("Add Goal")
+    if submit:
+        if name.strip():
+            add_goal(name, freq)
+        else:
+            st.error("Goal name is required.")
