@@ -9,17 +9,16 @@ import subprocess
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# File paths
+# File paths and settings
 DATA_FILE = "tracker_data.xlsx"
 HISTORY_FILE = "progress_history.xlsx"
 PASSWORD = "param123"
-
-# GitHub repository settings
-REPO_DIR = "."  # Repository root (adjust if needed)
-BRANCH = "main"  # Adjust to your branch name
+REPO_DIR = "."
+BRANCH = "main"
+GITHUB_REPO = "parameshwarareddy1/habit-tracker-api"
 
 # Load or initialize data
 def load_data():
@@ -54,66 +53,50 @@ def load_history():
 
 def save_data():
     try:
-        # Save data to temporary Excel files without password
-        temp_data_file = "temp_tracker_data.xlsx"
-        temp_history_file = "temp_progress_history.xlsx"
+        # Save to Excel files
+        st.session_state.data.to_excel(DATA_FILE, index=False, engine='openpyxl')
+        st.session_state.history.to_excel(HISTORY_FILE, index=False, engine='openpyxl')
+        logger.info(f"Saved {DATA_FILE} and {HISTORY_FILE}")
 
-        st.session_state.data.to_excel(temp_data_file, index=False, engine='openpyxl')
-        st.session_state.history.to_excel(temp_history_file, index=False, engine='openpyxl')
-        logger.info(f"Saved temporary files: {temp_data_file}, {temp_history_file}")
-
-        # Load workbooks with openpyxl to set password
-        data_wb = load_workbook(temp_data_file)
-        history_wb = load_workbook(temp_history_file)
-
-        # Set password protection
+        # Apply password protection
+        data_wb = load_workbook(DATA_FILE)
+        history_wb = load_workbook(HISTORY_FILE)
         data_wb.security.set_workbook_password(PASSWORD)
         history_wb.security.set_workbook_password(PASSWORD)
-
-        # Save the password-protected files
         data_wb.save(DATA_FILE)
         history_wb.save(HISTORY_FILE)
-        logger.info(f"Saved password-protected files: {DATA_FILE}, {HISTORY_FILE}")
-
-        # Remove temporary files
-        if os.path.exists(temp_data_file):
-            os.remove(temp_data_file)
-            logger.info(f"Removed temporary file: {temp_data_file}")
-        if os.path.exists(temp_history_file):
-            os.remove(temp_history_file)
-            logger.info(f"Removed temporary file: {temp_history_file}")
+        logger.info(f"Applied password protection to {DATA_FILE} and {HISTORY_FILE}")
 
         # Commit and push to GitHub
         commit_and_push_to_github()
-
     except Exception as e:
         logger.error(f"Error saving data: {e}")
         st.error(f"Error saving data: {e}")
+        raise
 
 def commit_and_push_to_github():
     try:
-        # Ensure we're in the repository directory
         os.chdir(REPO_DIR)
-        
-        # Add files to git
+        subprocess.run(["git", "config", "user.name", "Streamlit Bot"], check=True)
+        subprocess.run(["git", "config", "user.email", "bot@streamlit.app"], check=True)
         subprocess.run(["git", "add", DATA_FILE, HISTORY_FILE], check=True)
-        logger.info(f"Added {DATA_FILE} and {HISTORY_FILE} to git")
-
-        # Commit changes
         commit_message = f"Update tracker data {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        logger.info(f"Committed changes: {commit_message}")
-
-        # Push to GitHub
-        subprocess.run(["git", "push", "origin", BRANCH], check=True)
+        result = subprocess.run(["git", "commit", "-m", commit_message], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info(f"Committed changes: {commit_message}")
+        else:
+            logger.warning(f"Nothing to commit: {result.stderr}")
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            logger.error("GITHUB_TOKEN not found")
+            st.error("GitHub token not configured")
+            return
+        remote_url = f"https://{token}@github.com/{GITHUB_REPO}.git"
+        subprocess.run(["git", "push", remote_url, BRANCH], check=True)
         logger.info(f"Pushed changes to GitHub branch {BRANCH}")
-
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error committing/pushing to GitHub: {e}")
-        st.error(f"Error committing to GitHub: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error during Git operations: {e}")
-        st.error(f"Unexpected error during Git operations: {e}")
+        logger.error(f"Git error: {e.stderr}")
+        st.error(f"Git error: {e.stderr}")
 
 def get_week_number(date):
     return date.isocalendar()[1]
@@ -147,11 +130,7 @@ def add_goal(name, freq):
 def update_progress(goal_id, goal_name, pct):
     today = datetime.now().date()
     current_week = get_week_number(today)
-
-    # Get the goal's frequency
     frequency = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Frequency"].values[0]
-
-    # Check if an update is allowed
     if frequency == "Weekly":
         history_weeks = st.session_state.history[
             (st.session_state.history["GoalID"] == goal_id) & 
@@ -167,8 +146,6 @@ def update_progress(goal_id, goal_name, pct):
         ].empty:
             st.error("Progress for this goal has already been updated today.")
             return
-
-    # Update progress
     current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
     if pct == 100:
         new_progress = current_progress * 1.01
@@ -179,7 +156,6 @@ def update_progress(goal_id, goal_name, pct):
     else:
         new_progress = current_progress / 1.01
         change = -0.01
-
     st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
     row = {
         "GoalID": goal_id,
@@ -217,64 +193,18 @@ def show_progress_info(gid, gname):
     start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
     potential_progress = calculate_potential_progress(start_date, progress)
     today = datetime.now().date()
-
     st.markdown(f"""
-        <div style='
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            margin-top: 10px;
-        '>
-            <div style='
-                background: linear-gradient(45deg, #ff6b6b, #ff8e53);
-                color: white;
-                font-size: 18px;
-                padding: 15px 20px;
-                border-radius: 12px;
-                font-weight: bold;
-                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-                text-align: center;
-                transition: transform 0.2s ease-in-out;
-            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+        <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
+            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
                 🎯 Potential Progress: {potential_progress:.3f}
             </div>
-            <div style='
-                background: linear-gradient(45deg, #4facfe, #00f2fe);
-                color: white;
-                font-size: 18px;
-                padding: 15px 20px;
-                border-radius: 12px;
-                font-weight: bold;
-                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-                text-align: center;
-                transition: transform 0.2s ease-in-out;
-            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+            <div style='background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
                 🔥 Actual Progress: {progress:.3f}
             </div>
-            <div style='
-                background: linear-gradient(45deg, #2ecc71, #27ae60);
-                color: white;
-                font-size: 18px;
-                padding: 15px 20px;
-                border-radius: 12px;
-                font-weight: bold;
-                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-                text-align: center;
-                transition: transform 0.2s ease-in-out;
-            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+            <div style='background: linear-gradient(45deg, #2ecc71, #27ae60); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
                 🚀 Start Date: {start_date.strftime('%Y-%m-%d')}
             </div>
-            <div style='
-                background: linear-gradient(45deg, #e84393, #a29bfe);
-                color: white;
-                font-size: 18px;
-                padding: 15px 20px;
-                border-radius: 12px;
-                font-weight: bold;
-                box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-                text-align: center;
-                transition: transform 0.2s ease-in-out;
-            ' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
+            <div style='background: linear-gradient(45deg, #e84393, #a29bfe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
                 📅 Today: {today.strftime('%Y-%m-%d')}
             </div>
         </div>
@@ -286,13 +216,11 @@ def show_last_7_days(gid):
     days_since_start = (today - start_date).days
     display_start = max(today - timedelta(days=6), start_date)
     date_range = [display_start + timedelta(days=x) for x in range(min(7, days_since_start + 1))]
-
     df = st.session_state.history[
         (st.session_state.history["GoalID"] == gid) & 
         (st.session_state.history["Date"] >= display_start) & 
         (st.session_state.history["Date"] <= today)
     ]
-
     emojis = []
     for date in date_range:
         if date == start_date:
@@ -307,56 +235,59 @@ def show_last_7_days(gid):
     return " ".join(emojis)
 
 def show_calendar(gid, year=None, month=None):
-    today = datetime.now().date()
-    year = year or today.year
-    month = month or today.month
-    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-    df = st.session_state.history[st.session_state.history["GoalID"] == gid]
-    hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
+    try:
+        today = datetime.now().date()
+        year = year or today.year
+        month = month or today.month
+        start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
+        df = st.session_state.history[st.session_state.history["GoalID"] == gid]
+        hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
+        first_day = datetime(year, month, 1).date()
+        # Calculate last day of the month
+        last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
+        last_day = last_day.date()
+        today_str = today.strftime("%Y-%m-%d")
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        days = []
+        for i in range(first_day.weekday()):
+            days.append({"type": "pad"})
+        for d in range(1, last_day.day + 1):
+            ds = datetime(year, month, d).date()
+            ds_str = ds.strftime("%Y-%m-%d")
+            if ds_str > today_str:
+                status = "future"
+            elif ds_str == start_date_str:
+                status = "start"
+            elif ds_str in hist_by_date:
+                pct = hist_by_date[ds_str]["Percentage"]
+                status = "full" if pct == 100 else "half" if pct == 50 else "zero"
+            else:
+                status = "miss"
+            emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
+            days.append({"type": "day", "day": d, "date": ds_str, "status": status, "emoji": emoji})
+        calendar_html = f"""
+            <h4>Calendar for {year}-{month:02d}</h4>
+            <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
+                {''.join([
+                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{day['day'] + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
+                    for day in days
+                ])}
+            </div>
+        """
+        return calendar_html
+    except Exception as e:
+        logger.error(f"Error in show_calendar: {e}")
+        st.error(f"Error displaying calendar: {e}")
+        return "<p>Error generating calendar</p>"
 
-    first_day = datetime(year, month, 1).date()
-    last_day = (first_day + relativedelta(months=1) - timedelta(days=1)).date()
-    today_str = today.strftime("%Y-%m-%d")
-    start_date_str = start_date.strftime("%Y-%m-%d")
-
-    days = []
-    for i in range(first_day.weekday()):
-        days.append({"type": "pad"})
-    for d in range(1, last_day.day + 1):
-        ds = datetime(year, month, d).date()
-        ds_str = ds.strftime("%Y-%m-%d")
-        if ds_str > today_str:
-            status = "future"
-        elif ds_str == start_date_str:
-            status = "start"
-        elif ds_str in hist_by_date:
-            pct = hist_by_date[ds_str]["Percentage"]
-            status = "full" if pct == 100 else "half" if pct == 50 else "zero"
-        else:
-            status = "miss"
-        emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
-        days.append({"type": "day", "day": d, "date": ds_str, "status": status, "emoji": emoji})
-
-    # Generate calendar HTML
-    calendar_html = f"""
-        <h4>Calendar for {year}-{month:02d}</h4>
-        <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
-            <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
-            {''.join([
-                f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{day['day'] + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
-                for day in days
-            ])}
-        </div>
-    """
-    return calendar_html
-
-# -------- Streamlit UI --------
+# Streamlit UI
 st.set_page_config(page_title="Goal Tracker", layout="wide")
 st.title("🎯 Goal Tracker")
 
@@ -364,6 +295,15 @@ if "data" not in st.session_state:
     st.session_state.data = load_data()
 if "history" not in st.session_state:
     st.session_state.history = load_history()
+
+# Add new goal
+st.subheader("Add New Goal")
+with st.form("add_goal_form", clear_on_submit=True):
+    name = st.text_input("Goal Name")
+    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
+    submitted = st.form_submit_button("Add Goal")
+    if submitted and name:
+        add_goal(name, freq)
 
 # Show goals
 if not st.session_state.data.empty:
@@ -382,21 +322,4 @@ if not st.session_state.data.empty:
                     delete_goal(row["GoalID"], row["GoalName"])
             with col3:
                 if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
-                    if f"show_calendar_{row['GoalID']}" not in st.session_state:
-                        st.session_state[f"show_calendar_{row['GoalID']}"] = False
-                    st.session_state[f"show_calendar_{row['GoalID']}"] = not st.session_state[f"show_calendar_{row['GoalID']}"]
-            if st.session_state.get(f"show_calendar_{row['GoalID']}", False):
-                st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
-
-# Add goal form
-st.markdown("---")
-st.subheader("➕ Add New Goal")
-with st.form("new_goal"):
-    name = st.text_input("Goal Name")
-    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
-    submit = st.form_submit_button("Add Goal")
-    if submit:
-        if name.strip():
-            add_goal(name, freq)
-        else:
-            st.error("Goal name is required.")
+                    st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
