@@ -243,7 +243,6 @@ def show_calendar(gid, year=None, month=None):
         df = st.session_state.history[st.session_state.history["GoalID"] == gid]
         hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
         first_day = datetime(year, month, 1).date()
-        # Calculate last day of the month
         last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
         last_day = last_day.date()
         today_str = today.strftime("%Y-%m-%d")
