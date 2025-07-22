@@ -168,30 +168,25 @@ def calculate_potential_progress(start_date):
 
 def show_progress_info(gid, gname):
     df = st.session_state.history[st.session_state.history["GoalID"] == gid]
-    if df.empty:
-        return
     start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
     df = df[df["Date"] > start_date]  # Skip creation day
     success_days = (df["Percentage"] == 100).sum()
     failed_days = (df["Percentage"] == 0).sum()
     progress = df["Progress"].iloc[-1] if not df.empty else 1.0
     potential_progress = calculate_potential_progress(start_date)
-    st.markdown(f"""
-        <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
-            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
-                🚀 Potential Progress: {potential_progress:.3f}
-            </div>
-            <div style='background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
-                🔥 Actual Progress: {progress:.3f}
-            </div>
-            <div style='background: linear-gradient(45deg, #2ecc71, #27ae60); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
-                ✅ Success Days: {success_days}
-            </div>
-            <div style='background: linear-gradient(45deg, #e84393, #a29bfe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
-                ❌ Failures: {failed_days}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+
+    st.markdown(f"### Progress Dashboard")
+    st.write(f"**Potential Progress:** {potential_progress:.2f}")
+    st.progress(min(potential_progress / 2, 1.0))  # scale for bar
+
+    st.write(f"**Actual Progress:** {progress:.2f}")
+    st.progress(min(progress / potential_progress, 1.0))
+
+    st.write(f"**Success Days:** {success_days}")
+    st.progress(min(success_days / (success_days + failed_days + 1), 1.0))
+
+    st.write(f"**Failures:** {failed_days}")
+    st.progress(min(failed_days / (success_days + failed_days + 1), 1.0))
 
 # =====================
 # Calendar Function
