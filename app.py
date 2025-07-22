@@ -116,33 +116,31 @@ def add_goal(name, freq):
 
 def update_progress(goal_id, goal_name, pct):
     today = datetime.now().date()
-    current_week = get_week_number(today)
-    frequency = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Frequency"].values[0]
 
-    # Check if entry for today exists
-    today_entry = st.session_state.history[
-        (st.session_state.history["GoalID"] == goal_id) & 
+    # Check if progress is already updated today
+    if not st.session_state.history[
+        (st.session_state.history["GoalID"] == goal_id) &
         (st.session_state.history["Date"] == today)
-    ]
-
-    if not today_entry.empty:
-        # Update today's entry
-        current_progress = today_entry["Progress"].iloc[-1]
-        new_progress = current_progress * (1.01 if pct == 100 else 1.005 if pct == 50 else 1/1.01)
-        st.session_state.history.loc[today_entry.index, ["Percentage"]] = pct
-        st.session_state.history.loc[today_entry.index, ["Progress"]] = new_progress
-        st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
-        save_data()
-        st.success("Today's progress updated!")
-        st.rerun()
+    ].empty:
+        st.error("Progress for this goal has already been updated today.")
         return
 
-    # No entry yet - add a new row
+    # Get current progress
     current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
-    new_progress = current_progress * (1.01 if pct == 100 else 1.005 if pct == 50 else 1/1.01)
-    change = 0.01 if pct == 100 else 0.005 if pct == 50 else -0.01
+    if pct == 100:
+        new_progress = current_progress * 1.01
+        change = 0.01
+    elif pct == 50:
+        new_progress = current_progress * 1.005
+        change = 0.005
+    else:
+        new_progress = current_progress / 1.01
+        change = -0.01
 
+    # Update main data
     st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
+
+    # Add new entry to history
     row = {
         "GoalID": goal_id,
         "GoalName": goal_name,
@@ -152,7 +150,9 @@ def update_progress(goal_id, goal_name, pct):
         "Change": change
     }
     st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
+
     save_data()
+    logger.info(f"Updated progress for goal {goal_name}: Percentage={pct}, New Progress={new_progress}")
     st.success("Progress updated!")
     st.rerun()
 
@@ -164,7 +164,7 @@ def delete_goal(goal_id, goal_name):
     st.success(f"Goal '{goal_name}' deleted successfully!")
     st.rerun()
 
-def calculate_potential_progress(start_date, current_progress):
+def calculate_potential_progress(start_date):
     today = datetime.now().date()
     days_since_start = (today - start_date).days
     potential_progress = 1.0
@@ -180,7 +180,7 @@ def show_progress_info(gid, gname):
     failed_days = (df["Percentage"] == 0).sum()
     start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
     progress = df["Progress"].iloc[-1] if not df.empty else 1.0
-    potential_progress = calculate_potential_progress(start_date, progress)
+    potential_progress = calculate_potential_progress(start_date)
     st.markdown(f"""
         <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
             <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
