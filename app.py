@@ -175,6 +175,19 @@ def show_calendar(gid):
     """
     st.markdown(calendar_html, unsafe_allow_html=True)
 
+def show_summary_dashboard():
+    total_goals = len(st.session_state.data)
+    df = st.session_state.history
+    total_success = (df["Percentage"] == 100).sum()
+    total_failures = (df["Percentage"] == 0).sum()
+    st.markdown(f"""
+        <div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;'>
+            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); padding: 20px; border-radius: 10px; text-align:center; color:white; font-weight:bold; font-size:18px;'>🏆 Total Goals: {total_goals}</div>
+            <div style='background: linear-gradient(45deg, #2ecc71, #27ae60); padding: 20px; border-radius: 10px; text-align:center; color:white; font-weight:bold; font-size:18px;'>✅ Total Success: {total_success}</div>
+            <div style='background: linear-gradient(45deg, #e84393, #a29bfe); padding: 20px; border-radius: 10px; text-align:center; color:white; font-weight:bold; font-size:18px;'>❌ Total Failures: {total_failures}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Goal Tracker", layout="wide")
 st.title("🎯 Goal Tracker")
@@ -184,6 +197,10 @@ if "data" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = load_history()
 
+# Show Dashboard Summary
+show_summary_dashboard()
+
+# Show Goals
 if not st.session_state.data.empty:
     st.subheader("📌 Your Goals")
     for _, row in st.session_state.data.iterrows():
