@@ -1,78 +1,67 @@
 import streamlit as st
-from datetime import datetime, timedelta
 import pandas as pd
 import os
 import subprocess
 import logging
+from datetime import datetime, timedelta
+import calendar
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# File paths and settings
+# File paths
 DATA_FILE = "tracker_data.xlsx"
 HISTORY_FILE = "progress_history.xlsx"
-REPO_DIR = "."
-BRANCH = "main"
 GITHUB_REPO = "parameshwarareddy1/habit-tracker-api"
+BRANCH = "main"
 
-# Load or initialize data
-def load_data():
-    if os.path.exists(DATA_FILE):
+# Initialize session state
+def initialize_session_state():
+    if 'data' not in st.session_state:
         try:
-            df = pd.read_excel(DATA_FILE, engine='openpyxl')
-            df['DateAdded'] = pd.to_datetime(df['DateAdded']).dt.date
-            logger.info(f"Loaded {DATA_FILE} successfully")
+            st.session_state.data = pd.read_excel(DATA_FILE) if os.path.exists(DATA_FILE) else pd.DataFrame(
+                columns=["GoalID", "GoalName", "Frequency", "Progress", "DateAdded", "Week"]
+            )
         except Exception as e:
-            logger.error(f"Error reading {DATA_FILE}: {e}")
-            st.error(f"Error reading {DATA_FILE}: {e}")
-            df = pd.DataFrame(columns=["GoalID", "GoalName", "Frequency", "Progress", "DateAdded", "Week"])
-    else:
-        logger.warning(f"{DATA_FILE} not found, initializing empty DataFrame")
-        df = pd.DataFrame(columns=["GoalID", "GoalName", "Frequency", "Progress", "DateAdded", "Week"])
-    return df
-
-def load_history():
-    if os.path.exists(HISTORY_FILE):
+            logger.error(f"Error loading {DATA_FILE}: {e}")
+            st.error(f"Error loading tracker data: {e}")
+            st.session_state.data = pd.DataFrame(
+                columns=["GoalID", "GoalName", "Frequency", "Progress", "DateAdded", "Week"]
+            )
+    if 'history' not in st.session_state:
         try:
-            df = pd.read_excel(HISTORY_FILE, engine='openpyxl')
-            df['Date'] = pd.to_datetime(df['Date']).dt.date
-            logger.info(f"Loaded {HISTORY_FILE} successfully")
+            st.session_state.history = pd.read_excel(HISTORY_FILE) if os.path.exists(HISTORY_FILE) else pd.DataFrame(
+                columns=["GoalID", "GoalName", "Date", "Progress", "Percentage", "Change"]
+            )
         except Exception as e:
-            logger.error(f"Error reading {HISTORY_FILE}: {e}")
-            st.error(f"Error reading {HISTORY_FILE}: {e}")
-            df = pd.DataFrame(columns=["GoalID", "GoalName", "Date", "Progress", "Percentage", "Change"])
-    else:
-        logger.warning(f"{HISTORY_FILE} not found, initializing empty DataFrame")
-        df = pd.DataFrame(columns=["GoalID", "GoalName", "Date", "Progress", "Percentage", "Change"])
-    return df
+            logger.error(f"Error loading {HISTORY_FILE}: {e}")
+            st.error(f"Error loading history data: {e}")
+            st.session_state.history = pd.DataFrame(
+                columns=["GoalID", "GoalName", "Date", "Progress", "Percentage", "Change"]
+            )
 
+# Save data to Excel and push to GitHub
 def save_data():
     try:
-        # Save to Excel files without password protection
+        logger.info(f"Saving data: {st.session_state.data.to_dict()}")
+        logger.info(f"Saving history: {st.session_state.history.to_dict()}")
         st.session_state.data.to_excel(DATA_FILE, index=False, engine='openpyxl')
         st.session_state.history.to_excel(HISTORY_FILE, index=False, engine='openpyxl')
         logger.info(f"Saved {DATA_FILE} and {HISTORY_FILE}")
-
-        # Commit and push to GitHub
         commit_and_push_to_github()
     except Exception as e:
         logger.error(f"Error saving data: {e}")
         st.error(f"Error saving data: {e}")
         raise
 
+# Commit and push changes to GitHub
 def commit_and_push_to_github():
     try:
-        os.chdir(REPO_DIR)
-        subprocess.run(["git", "config", "user.name", "Streamlit Bot"], check=True)
-        subprocess.run(["git", "config", "user.email", "bot@streamlit.app"], check=True)
         subprocess.run(["git", "add", DATA_FILE, HISTORY_FILE], check=True)
         commit_message = f"Update tracker data {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        result = subprocess.run(["git", "commit", "-m", commit_message], capture_output=True, text=True)
-        if result.returncode == 0:
-            logger.info(f"Committed changes: {commit_message}")
-        else:
-            logger.warning(f"Nothing to commit: {result.stderr}")
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        logger.info(f"Committed changes: {commit_message}")
         token = os.environ.get("GITHUB_TOKEN")
         if not token:
             logger.error("GITHUB_TOKEN not found")
@@ -82,233 +71,152 @@ def commit_and_push_to_github():
         subprocess.run(["git", "push", remote_url, BRANCH], check=True)
         logger.info(f"Pushed changes to GitHub branch {BRANCH}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Git error: {e.stderr}")
-        st.error(f"Git error: {e.stderr}")
-
-def get_week_number(date):
-    return date.isocalendar()[1]
-
-def add_goal(name, freq):
-    goal_id = f"G{len(st.session_state.data) + 1}"
-    today = datetime.now().date()
-    week = get_week_number(today)
-    new_row = {
-        "GoalID": goal_id,
-        "GoalName": name,
-        "Frequency": freq,
-        "Progress": 1.0,
-        "DateAdded": today,
-        "Week": week
-    }
-    hist_row = {
-        "GoalID": goal_id,
-        "GoalName": name,
-        "Date": today,
-        "Progress": 1.0,
-        "Percentage": 0,
-        "Change": 0
-    }
-    st.session_state.data = pd.concat([st.session_state.data, pd.DataFrame([new_row])], ignore_index=True)
-    st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([hist_row])], ignore_index=True)
-    save_data()
-    logger.info(f"Added goal: {name}, Frequency: {freq}")
-    st.success(f"Added Goal: {name}")
-    st.rerun()
-
-def update_progress(goal_id, goal_name, pct):
-    today = datetime.now().date()
-    current_week = get_week_number(today)
-    frequency = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Frequency"].values[0]
-    if frequency == "Weekly":
-        history_weeks = st.session_state.history[
-            (st.session_state.history["GoalID"] == goal_id) & 
-            (st.session_state.history["Date"].apply(get_week_number) == current_week)
-        ]
-        if not history_weeks.empty:
-            st.error(f"Progress for this weekly goal has already been updated for week {current_week}.")
-            return
-    else:
-        if not st.session_state.history[
-            (st.session_state.history["GoalID"] == goal_id) & 
-            (st.session_state.history["Date"] == today)
-        ].empty:
-            st.error("Progress for this goal has already been updated today.")
-            return
-    current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
-    if pct == 100:
-        new_progress = current_progress * 1.01
-        change = 0.01
-    elif pct == 50:
-        new_progress = current_progress * 1.005
-        change = 0.005
-    else:
-        new_progress = current_progress / 1.01
-        change = -0.01
-    st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
-    row = {
-        "GoalID": goal_id,
-        "GoalName": goal_name,
-        "Date": today,
-        "Progress": new_progress,
-        "Percentage": pct,
-        "Change": change
-    }
-    st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([row])], ignore_index=True)
-    save_data()
-    logger.info(f"Updated progress for goal {goal_name}: Percentage={pct}, New Progress={new_progress}")
-    st.success("Progress updated!")
-    st.rerun()
-
-def delete_goal(goal_id, goal_name):
-    st.session_state.data = st.session_state.data[st.session_state.data["GoalID"] != goal_id]
-    st.session_state.history = st.session_state.history[st.session_state.history["GoalID"] != goal_id]
-    save_data()
-    logger.info(f"Deleted goal: {goal_name}")
-    st.success(f"Goal '{goal_name}' deleted successfully!")
-    st.rerun()
-
-def calculate_potential_progress(start_date, current_progress):
-    today = datetime.now().date()
-    days_since_start = (today - start_date).days
-    potential_progress = 1.0
-    for _ in range(days_since_start + 1):
-        potential_progress *= 1.01
-    return potential_progress
-
-def show_progress_info(gid, gname):
-    df = st.session_state.history[st.session_state.history["GoalID"] == gid]
-    if df.empty:
-        return
-    progress = df["Progress"].iloc[-1] if not df.empty else 1.0
-    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-    potential_progress = calculate_potential_progress(start_date, progress)
-    today = datetime.now().date()
-    st.markdown(f"""
-        <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
-            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                🎯 Potential Progress: {potential_progress:.3f}
-            </div>
-            <div style='background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                🔥 Actual Progress: {progress:.3f}
-            </div>
-            <div style='background: linear-gradient(45deg, #2ecc71, #27ae60); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                🚀 Start Date: {start_date.strftime('%Y-%m-%d')}
-            </div>
-            <div style='background: linear-gradient(45deg, #e84393, #a29bfe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; box-shadow: 0 6px 12px rgba(0,0,0,0.3); text-align: center; transition: transform 0.2s ease-in-out;' onmouseover='this.style.transform="scale(1.05)"' onmouseout='this.style.transform="scale(1)"'>
-                📅 Today: {today.strftime('%Y-%m-%d')}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-def show_last_7_days(gid):
-    today = datetime.now().date()
-    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-    days_since_start = (today - start_date).days
-    display_start = max(today - timedelta(days=6), start_date)
-    date_range = [display_start + timedelta(days=x) for x in range(min(7, days_since_start + 1))]
-    df = st.session_state.history[
-        (st.session_state.history["GoalID"] == gid) & 
-        (st.session_state.history["Date"] >= display_start) & 
-        (st.session_state.history["Date"] <= today)
-    ]
-    emojis = []
-    for date in date_range:
-        if date == start_date:
-            emojis.append("🚀")
-        else:
-            history = df[df["Date"] == date]
-            if not history.empty:
-                pct = history["Percentage"].iloc[-1]
-                emojis.append("🟢" if pct == 100 else "🟡" if pct == 50 else "🔴")
-            else:
-                emojis.append("⬜")
-    return " ".join(emojis)
-
-def show_calendar(gid, year=None, month=None):
-    try:
-        today = datetime.now().date()
-        year = year or today.year
-        month = month or today.month
-        start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-        df = st.session_state.history[st.session_state.history["GoalID"] == gid]
-        hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
-        first_day = datetime(year, month, 1).date()
-        last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
-        last_day = last_day.date()
-        today_str = today.strftime("%Y-%m-%d")
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        days = []
-        for i in range(first_day.weekday()):
-            days.append({"type": "pad"})
-        for d in range(1, last_day.day + 1):
-            ds = datetime(year, month, d).date()
-            ds_str = ds.strftime("%Y-%m-%d")
-            if ds_str > today_str:
-                status = "future"
-            elif ds_str == start_date_str:
-                status = "start"
-            elif ds_str in hist_by_date:
-                pct = hist_by_date[ds_str]["Percentage"]
-                status = "full" if pct == 100 else "half" if pct == 50 else "zero"
-            else:
-                status = "miss"
-            emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
-            days.append({"type": "day", "day": d, "date": ds_str, "status": status, "emoji": emoji})
-        calendar_html = f"""
-            <h4>Calendar for {year}-{month:02d}</h4>
-            <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
-                {''.join([
-                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day['day']) + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
-                    for day in days
-                ])}
-            </div>
-        """
-        return calendar_html
+        logger.error(f"Git error: {e}")
+        st.error(f"Git error: {e}")
     except Exception as e:
-        logger.error(f"Error in show_calendar: {e}")
-        st.error(f"Error displaying calendar: {e}")
-        return "<p>Error generating calendar</p>"
-
-# Streamlit UI
-st.set_page_config(page_title="Goal Tracker", layout="wide")
-st.title("🎯 Goal Tracker")
-
-if "data" not in st.session_state:
-    st.session_state.data = load_data()
-if "history" not in st.session_state:
-    st.session_state.history = load_history()
-
-# Show goals
-if not st.session_state.data.empty:
-    st.subheader("📌 Your Goals")
-    for _, row in st.session_state.data.iterrows():
-        last_7_days = show_last_7_days(row["GoalID"])
-        with st.expander(f"{row['GoalName']} | Last 7 Days: {last_7_days}"):
-            show_progress_info(row["GoalID"], row["GoalName"])
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col1:
-                pct = st.selectbox("Progress Today", [0, 50, 100], key=f"pct_{row['GoalID']}")
-                if st.button("Update", key=f"btn_{row['GoalID']}"):
-                    update_progress(row["GoalID"], row["GoalName"], pct)
-            with col2:
-                if st.button("Delete Goal", key=f"del_{row['GoalID']}"):
-                    delete_goal(row["GoalID"], row["GoalName"])
-            with col3:
-                if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
-                    st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
+        logger.error(f"Unexpected error in Git push: {e}")
+        st.error(f"Unexpected error in Git push: {e}")
 
 # Add new goal
-st.subheader("Add New Goal")
-with st.form("add_goal_form", clear_on_submit=True):
-    name = st.text_input("Goal Name")
-    freq = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
+def add_goal(goal_name, frequency):
+    try:
+        goal_id = f"G{len(st.session_state.data) + 1}"
+        today = datetime.now().date()
+        week = today.isocalendar()[1]
+        new_goal = pd.DataFrame([{
+            "GoalID": goal_id,
+            "GoalName": goal_name,
+            "Frequency": frequency,
+            "Progress": 1.0,
+            "DateAdded": today,
+            "Week": week
+        }])
+        new_history = pd.DataFrame([{
+            "GoalID": goal_id,
+            "GoalName": goal_name,
+            "Date": today,
+            "Progress": 1.0,
+            "Percentage": 0,
+            "Change": 0
+        }])
+        st.session_state.data = pd.concat([st.session_state.data, new_goal], ignore_index=True)
+        st.session_state.history = pd.concat([st.session_state.history, new_history], ignore_index=True)
+        save_data()
+        logger.info(f"Added goal: {goal_name}")
+        st.success(f"Added Goal: {goal_name}")
+    except Exception as e:
+        logger.error(f"Error adding goal: {e}")
+        st.error(f"Error adding goal: {e}")
+
+# Update progress
+def update_progress(goal_id, percentage):
+    try:
+        today = datetime.now().date()
+        goal = st.session_state.data[st.session_state.data["GoalID"] == goal_id]
+        if goal.empty:
+            st.error("Goal not found")
+            return
+        goal_name = goal["GoalName"].iloc[0]
+        current_progress = goal["Progress"].iloc[0]
+        change = percentage / 100
+        new_progress = current_progress + change
+        st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
+        new_history = pd.DataFrame([{
+            "GoalID": goal_id,
+            "GoalName": goal_name,
+            "Date": today,
+            "Progress": new_progress,
+            "Percentage": percentage,
+            "Change": change
+        }])
+        st.session_state.history = pd.concat([st.session_state.history, new_history], ignore_index=True)
+        save_data()
+        logger.info(f"Updated progress for goal {goal_name}: {percentage}%")
+        st.success("Progress updated!")
+    except Exception as e:
+        logger.error(f"Error updating progress: {e}")
+        st.error(f"Error updating progress: {e}")
+
+# Delete goal
+def delete_goal(goal_id):
+    try:
+        goal_name = st.session_state.data[st.session_state.data["GoalID"] == goal_id]["GoalName"].iloc[0]
+        st.session_state.data = st.session_state.data[st.session_state.data["GoalID"] != goal_id]
+        st.session_state.history = st.session_state.history[st.session_state.history["GoalID"] != goal_id]
+        save_data()
+        logger.info(f"Deleted goal: {goal_name}")
+        st.success(f"Goal '{goal_name}' deleted successfully!")
+    except Exception as e:
+        logger.error(f"Error deleting goal: {e}")
+        st.error(f"Error deleting goal: {e}")
+
+# Show calendar with emojis
+def show_calendar(goal_id):
+    try:
+        goal_history = st.session_state.history[st.session_state.history["GoalID"] == goal_id]
+        today = datetime.now().date()
+        year, month = today.year, today.month
+        cal = calendar.monthcalendar(year, month)
+        calendar_html = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>"
+        for week in cal:
+            for day in week:
+                emoji = ""
+                if day != 0:
+                    date = datetime(year, month, day).date()
+                    if date <= today:
+                        day_history = goal_history[goal_history["Date"] == str(date)]
+                        if not day_history.empty:
+                            progress = day_history["Progress"].iloc[-1]
+                            emoji = "🚀" if progress >= 1.0 else "🟡" if progress >= 0.5 else "🔴"
+                        else:
+                            emoji = "⬜"
+                calendar_html += f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day) + ' ' + emoji if day != 0 else ''}</div>"
+        calendar_html += "</div>"
+        st.markdown(calendar_html, unsafe_allow_html=True)
+    except Exception as e:
+        logger.error(f"Error displaying calendar: {e}")
+        st.error(f"Error displaying calendar: {e}")
+
+# Streamlit UI
+st.title("Habit Tracker")
+
+initialize_session_state()
+
+# Your Goals section
+st.header("Your Goals")
+if st.session_state.data.empty:
+    st.write("No goals yet. Add a new goal below!")
+else:
+    for _, row in st.session_state.data.iterrows():
+        goal_id = row["GoalID"]
+        st.subheader(row["GoalName"])
+        st.write(f"Frequency: {row['Frequency']}")
+        st.write(f"Progress: {row['Progress']:.3f}")
+        last_7_days = st.session_state.history[
+            (st.session_state.history["GoalID"] == goal_id) &
+            (st.session_state.history["Date"] >= str(datetime.now().date() - timedelta(days=7)))
+        ]
+        emojis = "".join(
+            "🚀" if row["Progress"] >= 1.0 else "🟡" if row["Progress"] >= 0.5 else "🔴"
+            for _, row in last_7_days.sort_values("Date").iterrows()
+        )
+        st.write(f"Last 7 Days: {emojis if emojis else 'No progress yet'}")
+        percentage = st.selectbox(f"Progress Today (%) for {row['GoalName']}", [0, 25, 50, 75, 100], key=f"progress_{goal_id}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(f"Update", key=f"update_{goal_id}"):
+                update_progress(goal_id, percentage)
+        with col2:
+            if st.button(f"Delete Goal", key=f"delete_{goal_id}"):
+                delete_goal(goal_id)
+        with st.expander(f"Show Calendar for {row['GoalName']}"):
+            show_calendar(goal_id)
+
+# Add New Goal section
+st.header("Add New Goal")
+with st.form("add_goal_form"):
+    goal_name = st.text_input("Goal Name")
+    frequency = st.selectbox("Frequency", ["Daily", "Weekly", "Monthly"])
     submitted = st.form_submit_button("Add Goal")
-    if submitted and name:
-        add_goal(name, freq)
+    if submitted and goal_name:
+        add_goal(goal_name, frequency)
