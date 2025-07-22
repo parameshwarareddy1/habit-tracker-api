@@ -16,9 +16,7 @@ REPO_DIR = "."
 BRANCH = "main"
 GITHUB_REPO = "parameshwarareddy1/habit-tracker-api"
 
-# =====================
-# Load or Initialize Data
-# =====================
+# Load or initialize data
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -84,9 +82,6 @@ def commit_and_push_to_github():
         logger.error(f"Git error: {e.stderr}")
         st.error(f"Git error: {e.stderr}")
 
-# =====================
-# Goal Functions
-# =====================
 def get_week_number(date):
     return date.isocalendar()[1]
 
@@ -110,20 +105,18 @@ def add_goal(name, freq):
 
 def update_progress(goal_id, goal_name, pct):
     today = datetime.now().date()
-    start_date = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "DateAdded"].values[0]
-
-    # Don't allow updates on the first day
+    start_date = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "DateAdded"].iloc[0]
     if today == start_date:
-        st.error("Progress can be updated starting from tomorrow (Day 2).")
+        st.error("Progress can be updated starting from Day 2, not the creation day.")
         return
-
+    current_week = get_week_number(today)
+    frequency = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Frequency"].values[0]
     if not st.session_state.history[
-        (st.session_state.history["GoalID"] == goal_id) &
+        (st.session_state.history["GoalID"] == goal_id) & 
         (st.session_state.history["Date"] == today)
     ].empty:
         st.error("Progress for this goal has already been updated today.")
         return
-
     current_progress = st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"].values[0]
     if pct == 100:
         new_progress = current_progress * 1.01
@@ -134,7 +127,6 @@ def update_progress(goal_id, goal_name, pct):
     else:
         new_progress = current_progress / 1.01
         change = -0.01
-
     st.session_state.data.loc[st.session_state.data["GoalID"] == goal_id, "Progress"] = new_progress
     row = {
         "GoalID": goal_id,
@@ -169,83 +161,67 @@ def calculate_potential_progress(start_date):
 def show_progress_info(gid, gname):
     df = st.session_state.history[st.session_state.history["GoalID"] == gid]
     start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-    df = df[df["Date"] > start_date]  # Skip creation day
+    df = df[df["Date"] > start_date]  # Skip first day
     success_days = (df["Percentage"] == 100).sum()
     failed_days = (df["Percentage"] == 0).sum()
     progress = df["Progress"].iloc[-1] if not df.empty else 1.0
     potential_progress = calculate_potential_progress(start_date)
 
-    st.markdown(f"### Progress Dashboard")
-    st.write(f"**Potential Progress:** {potential_progress:.2f}")
-    st.progress(min(potential_progress / 2, 1.0))  # scale for bar
-
-    st.write(f"**Actual Progress:** {progress:.2f}")
-    st.progress(min(progress / potential_progress, 1.0))
-
-    st.write(f"**Success Days:** {success_days}")
-    st.progress(min(success_days / (success_days + failed_days + 1), 1.0))
-
-    st.write(f"**Failures:** {failed_days}")
-    st.progress(min(failed_days / (success_days + failed_days + 1), 1.0))
-
-# =====================
-# Calendar Function
-# =====================
-def show_calendar(gid, year=None, month=None):
-    try:
-        today = datetime.now().date()
-        year = year or today.year
-        month = month or today.month
-        start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
-        df = st.session_state.history[st.session_state.history["GoalID"] == gid]
-        hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
-        first_day = datetime(year, month, 1).date()
-        last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
-        last_day = last_day.date()
-        days = []
-        for i in range(first_day.weekday()):
-            days.append({"type": "pad"})
-        for d in range(1, last_day.day + 1):
-            ds = datetime(year, month, d).date()
-            if ds > today:
-                status = "future"
-            elif ds == start_date:
-                status = "start"
-            elif ds in hist_by_date:
-                pct = hist_by_date[ds]["Percentage"]
-                status = "full" if pct == 100 else "half" if pct == 50 else "zero"
-            else:
-                if ds < start_date:
-                    status = "future"
-                else:
-                    status = "miss"
-            emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
-            days.append({"type": "day", "day": d, "emoji": emoji})
-        calendar_html = f"""
-            <h4>Calendar for {year}-{month:02d}</h4>
-            <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
-                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
-                {''.join([
-                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day['day']) + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
-                    for day in days
-                ])}
+    st.markdown(f"""
+        <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
+            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; text-align: center;'>
+                🎯 Potential Progress: {potential_progress:.3f}
             </div>
-        """
-        return calendar_html
-    except Exception as e:
-        logger.error(f"Error in show_calendar: {e}")
-        st.error(f"Error displaying calendar: {e}")
-        return "<p>Error generating calendar</p>"
+            <div style='background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; text-align: center;'>
+                🔥 Actual Progress: {progress:.3f}
+            </div>
+            <div style='background: linear-gradient(45deg, #2ecc71, #27ae60); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; text-align: center;'>
+                ✅ Success Days: {success_days}
+            </div>
+            <div style='background: linear-gradient(45deg, #e84393, #a29bfe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold; text-align: center;'>
+                ❌ Failure Days: {failed_days}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
-# =====================
+def show_calendar(gid):
+    today = datetime.now().date()
+    start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
+    df = st.session_state.history[st.session_state.history["GoalID"] == gid]
+    hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
+    month = today.month
+    year = today.year
+    first_day = datetime(year, month, 1).date()
+    last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
+    last_day = last_day.date()
+    days = []
+    for i in range(first_day.weekday()):
+        days.append({"type": "pad"})
+    for d in range(1, last_day.day + 1):
+        ds = datetime(year, month, d).date()
+        if ds > today:
+            status = "future"
+        elif ds == start_date:
+            status = "start"
+        elif ds in hist_by_date:
+            pct = hist_by_date[ds]["Percentage"]
+            status = "full" if pct == 100 else "half" if pct == 50 else "zero"
+        else:
+            status = "miss"
+        emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
+        days.append({"type": "day", "day": d, "emoji": emoji})
+    calendar_html = f"""
+        <h4>Calendar for {year}-{month:02d}</h4>
+        <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
+            {''.join([
+                f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day['day']) + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
+                for day in days
+            ])}
+        </div>
+    """
+    st.markdown(calendar_html, unsafe_allow_html=True)
+
 # Streamlit UI
-# =====================
 st.set_page_config(page_title="Goal Tracker", layout="wide")
 st.title("🎯 Goal Tracker")
 
@@ -269,7 +245,7 @@ if not st.session_state.data.empty:
                     delete_goal(row["GoalID"], row["GoalName"])
             with col3:
                 if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
-                    st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
+                    show_calendar(row["GoalID"])
 
 # Add new goal
 st.subheader("Add New Goal")
