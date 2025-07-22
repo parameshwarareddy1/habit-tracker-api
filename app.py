@@ -117,7 +117,6 @@ def update_progress(goal_id, goal_name, pct):
         st.error("Progress can be updated starting from tomorrow (Day 2).")
         return
 
-    # Check if progress is already updated today
     if not st.session_state.history[
         (st.session_state.history["GoalID"] == goal_id) &
         (st.session_state.history["Date"] == today)
@@ -195,6 +194,61 @@ def show_progress_info(gid, gname):
     """, unsafe_allow_html=True)
 
 # =====================
+# Calendar Function
+# =====================
+def show_calendar(gid, year=None, month=None):
+    try:
+        today = datetime.now().date()
+        year = year or today.year
+        month = month or today.month
+        start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
+        df = st.session_state.history[st.session_state.history["GoalID"] == gid]
+        hist_by_date = {row["Date"]: row for row in df.to_dict('records')}
+        first_day = datetime(year, month, 1).date()
+        last_day = (datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)) - timedelta(days=1)
+        last_day = last_day.date()
+        days = []
+        for i in range(first_day.weekday()):
+            days.append({"type": "pad"})
+        for d in range(1, last_day.day + 1):
+            ds = datetime(year, month, d).date()
+            if ds > today:
+                status = "future"
+            elif ds == start_date:
+                status = "start"
+            elif ds in hist_by_date:
+                pct = hist_by_date[ds]["Percentage"]
+                status = "full" if pct == 100 else "half" if pct == 50 else "zero"
+            else:
+                if ds < start_date:
+                    status = "future"
+                else:
+                    status = "miss"
+            emoji = {"start": "🚀", "full": "🟢", "half": "🟡", "zero": "🔴", "miss": "⬜", "future": ""}[status]
+            days.append({"type": "day", "day": d, "emoji": emoji})
+        calendar_html = f"""
+            <h4>Calendar for {year}-{month:02d}</h4>
+            <div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;'>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sun</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Mon</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Tue</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Wed</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Thu</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Fri</div>
+                <div style='font-weight: bold; background: #eee; padding: 10px; text-align: center;'>Sat</div>
+                {''.join([
+                    f"<div style='padding: 10px; text-align: center; border: 1px solid #ccc;'>{str(day['day']) + ' ' + day['emoji'] if day['type'] == 'day' else ''}</div>"
+                    for day in days
+                ])}
+            </div>
+        """
+        return calendar_html
+    except Exception as e:
+        logger.error(f"Error in show_calendar: {e}")
+        st.error(f"Error displaying calendar: {e}")
+        return "<p>Error generating calendar</p>"
+
+# =====================
 # Streamlit UI
 # =====================
 st.set_page_config(page_title="Goal Tracker", layout="wide")
@@ -210,7 +264,7 @@ if not st.session_state.data.empty:
     for _, row in st.session_state.data.iterrows():
         with st.expander(f"{row['GoalName']}"):
             show_progress_info(row["GoalID"], row["GoalName"])
-            col1, col2 = st.columns([1, 1])
+            col1, col2, col3 = st.columns([1, 1, 1])
             with col1:
                 pct = st.selectbox("Progress Today", [0, 50, 100], key=f"pct_{row['GoalID']}")
                 if st.button("Update", key=f"btn_{row['GoalID']}"):
@@ -218,6 +272,9 @@ if not st.session_state.data.empty:
             with col2:
                 if st.button("Delete Goal", key=f"del_{row['GoalID']}"):
                     delete_goal(row["GoalID"], row["GoalName"])
+            with col3:
+                if st.button("Show Calendar", key=f"cal_{row['GoalID']}"):
+                    st.markdown(show_calendar(row["GoalID"]), unsafe_allow_html=True)
 
 # Add new goal
 st.subheader("Add New Goal")
