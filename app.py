@@ -164,6 +164,14 @@ def delete_goal(goal_id, goal_name):
     st.success(f"Goal '{goal_name}' deleted successfully!")
     st.rerun()
 
+def calculate_potential_progress(start_date, current_progress):
+    today = datetime.now().date()
+    days_since_start = (today - start_date).days
+    potential_progress = 1.0
+    for _ in range(days_since_start + 1):
+        potential_progress *= 1.01
+    return potential_progress
+
 def show_progress_info(gid, gname):
     df = st.session_state.history[st.session_state.history["GoalID"] == gid]
     if df.empty:
@@ -172,9 +180,12 @@ def show_progress_info(gid, gname):
     failed_days = (df["Percentage"] == 0).sum()
     start_date = st.session_state.data[st.session_state.data["GoalID"] == gid]["DateAdded"].iloc[0]
     progress = df["Progress"].iloc[-1] if not df.empty else 1.0
-    today = datetime.now().date()
+    potential_progress = calculate_potential_progress(start_date, progress)
     st.markdown(f"""
         <div style='display: flex; flex-direction: column; gap: 15px; margin-top: 10px;'>
+            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
+                🚀 Potential Progress: {potential_progress:.3f}
+            </div>
             <div style='background: linear-gradient(45deg, #4facfe, #00f2fe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
                 🔥 Actual Progress: {progress:.3f}
             </div>
@@ -183,9 +194,6 @@ def show_progress_info(gid, gname):
             </div>
             <div style='background: linear-gradient(45deg, #e84393, #a29bfe); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
                 ❌ Failures: {failed_days}
-            </div>
-            <div style='background: linear-gradient(45deg, #ff6b6b, #ff8e53); color: white; font-size: 18px; padding: 15px 20px; border-radius: 12px; font-weight: bold;'>
-                📅 Start Date: {start_date.strftime('%Y-%m-%d')}
             </div>
         </div>
     """, unsafe_allow_html=True)
